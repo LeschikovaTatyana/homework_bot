@@ -3,7 +3,7 @@ import os
 import sys
 import time
 from http import HTTPStatus
-
+from typing import Dict, List, Tuple, Union
 import requests
 import telegram
 from dotenv import load_dotenv
@@ -12,7 +12,8 @@ from telegram import Bot
 import exception
 load_dotenv()
 
-
+type_dict = Dict[str, List[Tuple[Dict[str, Union[int, str]], ...]]]
+type_list = List[Tuple[Dict[str, Union[int, str]], ...]]
 PRACTICUM_TOKEN = os.getenv('PRACTICUM_TOKEN')
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
@@ -52,25 +53,22 @@ def send_message(bot, message):
         logger.error(message)
 
 
-def get_api_answer(current_timestamp):
+def get_api_answer(current_timestamp: int) -> type_dict:
     """Запрос к API."""
-    try:
-        timestamp = current_timestamp or int(time.time())
-        request_params = {
-            'url': ENDPOINT,
-            'headers': HEADERS,
-            'params': {'from_date': timestamp},
-        }
-        response = requests.get(**request_params)
-    except exception.APIRequestingException:
-        raise 'Ошибка при запросе к основному API'
+    timestamp = current_timestamp or int(time.time())
+    request_params = {
+        'url': ENDPOINT,
+        'headers': HEADERS,
+        'params': {'from_date': timestamp},
+    }
+    response = requests.get(**request_params)
     if response.status_code != HTTPStatus.OK:
         raise exception.APINotResponding('API не отвечает')
     response = response.json()
     return response
 
 
-def check_response(response: dict) -> list:
+def check_response(response: type_dict) -> type_list:
     """Проверка ответа API на корректность."""
     if response == {}:
         message = 'Ответ от API содержит пустой словарь'
@@ -92,7 +90,7 @@ def check_response(response: dict) -> list:
         return response.get('homeworks')
 
 
-def parse_status(homework):
+def parse_status(homework: type_list) -> str:
     """Проверка и формирование сообщения о статусе работы."""
     homework_name = homework.get('homework_name')
     homework_status = homework.get('status')
@@ -124,10 +122,13 @@ def check_tokens():
 
 def main():
     """Основная логика работы бота."""
+    if not check_tokens():
+        sys.exit('Отсутствует обязательная переменная окружения')
     bot = Bot(token=TELEGRAM_TOKEN)
     current_timestamp = int(time.time() - DELTA_TIME)
     save_message = ''
-    save_error = ''
+    global last_error
+    last_error = ''
     logger.info('Начало работы')
     while True:
         try:
@@ -142,11 +143,11 @@ def main():
                     logger.debug('Новые статусы отсутствуют')
             current_timestamp = int(time.time())
         except Exception as error:
-            if save_error != error:
+            if last_error != error:
                 message = f'Сбой в работе программы: {error}'
                 logger.error(message)
                 send_message(bot, message)
-                save_error = error
+                last_error = error
         else:
             logger.info('Программа отработала без ошибок')
         finally:
