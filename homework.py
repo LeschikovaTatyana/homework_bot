@@ -2,13 +2,14 @@ import logging
 import os
 import sys
 import time
+from http import HTTPStatus
 
 import requests
 import telegram
 from dotenv import load_dotenv
 from telegram import Bot
-from http import HTTPStatus
 
+import exception
 load_dotenv()
 
 
@@ -40,49 +41,6 @@ handler.setFormatter(formatter)
 logger.addHandler(handler)
 
 
-class MyException(Exception):
-    """Класс собственых ошибок."""
-
-    def __init__(self, *args):
-        """Определяем объект с текстом сообщения."""
-        self.message = args[0] if args else None
-
-    def __str__(self):
-        """Переопределенный вывод отправляет сообщение об ошибке.
-        И пишет ошибку в логи.
-        """
-        global save_error
-        if save_error != self.message:
-            message = f'Сбой в работе программы: {self.message}'
-            logger.error(message)
-            send_message(Bot(token=TELEGRAM_TOKEN), message)
-            save_error = self.message
-
-
-class APIRequestingException(MyException):
-    """Ошибка при запросе к основному API."""
-
-    pass
-
-
-class APINotResponding(MyException):
-    """API не отвечает."""
-
-    pass
-
-
-class APINotKeysException(MyException):
-    """Отсутствие ожидаемых ключей в ответе API."""
-
-    pass
-
-
-class NoneEnvironmentExeption(MyException):
-    """Отсутствует обязательная переменная окружения."""
-
-    pass
-
-
 def send_message(bot, message):
     """Отправка сообщения."""
     logger.info('Начало отправки сообщения в Telegram')
@@ -104,20 +62,20 @@ def get_api_answer(current_timestamp):
             'params': {'from_date': timestamp},
         }
         response = requests.get(**request_params)
-    except APIRequestingException:
+    except exception.APIRequestingException:
         raise 'Ошибка при запросе к основному API'
     if response.status_code != HTTPStatus.OK:
-        raise APINotResponding('API не отвечает')
+        raise exception.APINotResponding('API не отвечает')
     response = response.json()
     return response
 
 
-def check_response(response):
+def check_response(response: dict) -> list:
     """Проверка ответа API на корректность."""
     if response == {}:
         message = 'Ответ от API содержит пустой словарь'
         logger.error(message)
-        raise KeyError(message)
+        raise exception.EmptyDictException(message)
     if not isinstance(response, dict):
         message = 'Вернулся не словарь'
         logger.error(message)
@@ -147,20 +105,21 @@ def parse_status(homework):
         logger.error(message)
         raise KeyError(message)
     if homework_status not in HOMEWORK_STATUSES:
-        raise APINotKeysException('Отсутствие ожидаемых ключей в ответе API')
+        raise exception.APINotKeysException(
+            'Отсутствие ожидаемых ключей в ответе API'
+        )
     verdict = HOMEWORK_STATUSES[homework_status]
     return f'Изменился статус проверки работы "{homework_name}". {verdict}'
 
 
 def check_tokens():
     """Проверка переменных окружения."""
-    try:
-        if PRACTICUM_TOKEN and TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
-            return True
-    except NoneEnvironmentExeption:
+    if all((PRACTICUM_TOKEN, TELEGRAM_TOKEN, TELEGRAM_CHAT_ID)):
+        return True
+    else:
         message = 'Отсутствует обязательная переменная окружения.'
         logger.critical(message)
-        raise message
+        return False
 
 
 def main():
